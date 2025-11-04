@@ -2,33 +2,21 @@ import numpy as np
 import time
 from collections import deque
 from arch import arch_model
+from Sol_Price_Tracker import get_price_binance, get_price_coinbase
 
-# --- Try to connect with your existing Solana price fetcher automatically ---
-try:
-    # Option A: your tracker defines a get_current_price() function
-    from Sol_Price_Tracker import get_current_price
-    print("[INFO] Using get_current_price() directly from Sol_Price_Tracker.py")
-except ImportError:
+# --- Unified price getter ---
+def get_current_price():
     try:
-        # Option B: your tracker uses a class like SolPriceTracker().get_price()
-        from Sol_Price_Tracker import SolPriceTracker
-        tracker = SolPriceTracker()
-
-        def get_current_price():
-            return tracker.get_price()
-
-        print("[INFO] Using SolPriceTracker().get_price()")
-    except Exception as e:
-        raise ImportError(
-            f"Could not import price fetcher from Sol_Price_Tracker.py — please check its name.\n{e}"
-        )
+        return get_price_binance()
+    except Exception:
+        return get_price_coinbase()
 
 # --- Rolling data setup ---
-price_window = deque(maxlen=3600)  # store last hour of second-by-second data
+price_window = deque(maxlen=3600)  # last hour of 1-sec prices
 last_update = 0
 S0 = None
 
-# --- Target price ranges for probability computation ---
+# --- Target price ranges (customize as needed) ---
 TARGET_RANGES = {
     "1h": (200, 220),
     "6h": (190, 240),
