@@ -24,19 +24,25 @@ class PolymarketTokenHelper:
             print(f"❌ Error fetching market: {e}")
             return None
 
+        # Handle cases where data wraps in "markets" array
+        if isinstance(data, dict) and "markets" in data:
+            data = data["markets"][0]
+
         outcomes = data.get("outcomes", [])
-        if not outcomes:
-            print("⚠️ No outcomes found for this slug.")
+        if not outcomes or not isinstance(outcomes, list):
+            print("⚠️ No valid outcomes found for this slug.")
             return None
 
-        print(f"\n📊 Market: {data.get('question')}\n")
+        print(f"\n📊 Market: {data.get('question', 'Unknown market')}\n")
         result = {}
         for o in outcomes:
-            name = o.get("name", "Unknown")
-            token_id = o.get("token_id", "N/A")
-            print(f"  {name} → {token_id}")
-            result[name] = token_id
-
+            if isinstance(o, dict):
+                name = o.get("name", "Unknown")
+                token_id = o.get("token_id", "N/A")
+                print(f"  {name} → {token_id}")
+                result[name] = token_id
+            else:
+                print(f"⚠️ Unexpected outcome format: {o}")
         return result
 
 
