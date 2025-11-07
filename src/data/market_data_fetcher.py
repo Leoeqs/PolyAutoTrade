@@ -4,6 +4,7 @@ import re
 
 GAMMA_BASE = "https://gamma-api.polymarket.com"
 
+
 def clean_slug(raw_input: str) -> str:
     """Normalize user input (URL, title, or slug) into a clean slug for Gamma API."""
     raw_input = raw_input.strip()
@@ -49,12 +50,20 @@ def fetch_orderbook(token_id: str):
     return resp.json()
 
 
+def safe_float(x):
+    """Convert a string or numeric input safely to float."""
+    try:
+        return float(x)
+    except Exception:
+        return 0.0
+
+
 def format_orderbook_side(ob_data):
     """Extract best bid/ask and compute midprice."""
     bids = ob_data.get("bids", [])
     asks = ob_data.get("asks", [])
-    best_bid = float(bids[0]["price"]) if bids else 0.0
-    best_ask = float(asks[0]["price"]) if asks else 1.0
+    best_bid = safe_float(bids[0]["price"]) if bids else 0.0
+    best_ask = safe_float(asks[0]["price"]) if asks else 1.0
     mid = round((best_bid + best_ask) / 2, 4)
     return best_bid, best_ask, mid
 
@@ -76,10 +85,17 @@ def fetch_market_data(raw_input: str):
     except Exception:
         raise ValueError("❌ Could not parse token IDs from market JSON.")
 
+    results = {}
     for label, token_id in zip(["YES", "NO"], clob_ids):
         ob = fetch_orderbook(token_id)
         best_bid, best_ask, mid = format_orderbook_side(ob)
-        print(f"{label}: bid {best_bid:.4f} | ask {best_ask:.4f} | mid {mid:.4f} ({mid*100:.2f}%)")
+        implied_prob = round(mid * 100, 2)
+        results[label] = implied_prob
+        print(f"✅ {label}: bid {best_bid:.3f} | ask {best_ask:.3f} | mid {mid:.3f} → {implied_prob:.2f}%")
+
+    # Optional summary line
+    if "YES" in results and "NO" in results:
+        print(f"\n🧮 Check: YES + NO = {results['YES'] + results['NO']:.2f}% (market skew {abs(results['YES'] + results['NO'] - 100):.2f}%)")
 
 
 if __name__ == "__main__":
