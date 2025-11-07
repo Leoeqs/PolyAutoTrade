@@ -44,6 +44,7 @@ def fetch_market_by_slug(slug: str):
 
 
 def fetch_market_by_condition_id(slug: str):
+    """Fallback: search market by substring match."""
     resp = requests.get(f"{GAMMA_BASE}/markets/all", timeout=15)
     if resp.status_code != 200:
         raise ValueError("❌ Failed to fetch markets list.")
@@ -54,7 +55,7 @@ def fetch_market_by_condition_id(slug: str):
 
 
 def fetch_orderbook(token_id: str):
-    """Fetch the full CLOB orderbook for a given token."""
+    """Fetch full CLOB orderbook for a given token."""
     url = f"{CLOB_BASE}/book"
     params = {"token_id": token_id}
     resp = requests.get(url, params=params, timeout=10)
@@ -66,8 +67,8 @@ def fetch_orderbook(token_id: str):
 
 
 def normalize_price(p):
-    """Convert micro-units to standard decimals."""
-    return safe_float(p) / 1_000_000
+    """Convert price string to float (already normalized)."""
+    return safe_float(p)
 
 
 def summarize_orderbook(label, ob_data):
@@ -102,7 +103,7 @@ def save_orderbook(slug, market_name, orderbooks):
         json.dump(
             {
                 "market": market_name,
-                "timestamp": datetime.utcnow().isoformat(),
+                "timestamp": datetime.now().isoformat(),
                 "orderbooks": orderbooks,
             },
             f,
