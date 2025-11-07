@@ -3,45 +3,29 @@ import json
 import re
 
 def clean_slug(raw_input: str) -> str:
-    """
-    Convert a user input (slug, title, or full URL) into a valid Polymarket slug
-    that matches Gamma API formatting exactly.
-    """
+    """Convert any user input (URL, title, slug) into a normalized slug format."""
     raw_input = raw_input.strip()
 
-    # Case 1: full URL — extract the slug part
+    # Case 1: Full URL
     if "polymarket.com/event/" in raw_input:
         slug = raw_input.split("/event/")[-1]
-        slug = slug.split("?")[0]  # remove ?tid= etc.
+        slug = slug.split("?")[0]
         return slug.lower()
 
-    # Case 2: already a valid slug
+    # Case 2: already looks like a slug
     if re.fullmatch(r"[a-z0-9\-]+", raw_input):
         return raw_input.lower()
 
-    # Case 3: descriptive title — normalize it
+    # Case 3: descriptive title — normalize
     slug = raw_input.lower()
-
-    # Normalize punctuation and special Unicode
     slug = slug.replace("–", "-").replace("—", "-")
     slug = slug.replace("’", "'").replace("“", "").replace("”", "")
-    slug = slug.replace("#", "number")  # Replace hashtags with "number"
-
-    # Remove parentheses and their contents
+    slug = slug.replace("#", "number")
     slug = re.sub(r"\([^)]*\)", "", slug)
-
-    # Remove punctuation except hyphens and letters/numbers
     slug = re.sub(r"[^\w\s-]", "", slug)
-
-    # Replace spaces/underscores with hyphens
     slug = re.sub(r"[\s_]+", "-", slug)
-
-    # Collapse multiple hyphens
     slug = re.sub(r"-{2,}", "-", slug)
-
-    # Trim leading/trailing hyphens
     slug = slug.strip("-")
-
     return slug
 
 
@@ -51,32 +35,57 @@ class PolymarketTokenHelper:
     def __init__(self):
         self.session = requests.Session()
 
-    def get_market_data(self, slug: str):
-        """Fetch raw market data for a given slug."""
-        url = f"{self.BASE_URL}/markets/slug/{slug}"
+    def _get(self, endpoint):
+        """GET request with basic error handling."""
+        url = f"{self.BASE_URL}{endpoint}"
+        resp = self.session.get(url, timeout=10)
+        resp.raise_for_status()
+        return resp.json()
+
+    def get_market_data(self, slug_or_title: str):
+        """Try slug first, then fallback to search-based lookup if needed."""
+        endpoint = f"/markets/slug/{slug_or_title}"
         try:
-            resp = self.session.get(url, timeout=10)
-            resp.raise_for_status()
-            return resp.json()
+            return self._get(endpoint)
         except requests.exceptions.HTTPError as e:
-            print(f"❌ Error fetching market: {e}")
-            print(f"URL attempted: {url}")
-            return None
-        except requests.exceptions.RequestException as e:
-            print(f"⚠️ Network error: {e}")
+            if e.response.status_code == 404:
+                print("🔁 Slug not found — falling back to search by title...")
+                return self.search_market(slug_or_title)
+            else:
+                raise
+
+    def search_market(self, title: str):
+        """Search markets by title via Gamma and return the best match."""
+        query = title.replace(" ", "%20")
+        endpoint = f"/markets?search={query}&limit=10"
+        data = self._get(endpoint)
+        if not data:
+            print("❌ No markets found during search.")
             return None
 
-    def get_token_ids(self, slug: str):
-        """Extract YES/NO token IDs for a given market."""
+        # Pick the first market whose question contains part of the title
+        for market in data:
+            if title.lower().split()[0] in market.get("question", "").lower():
+                print(f"✅ Found via search: {market.get('question')}")
+                return market
+
+        # Otherwise, just return the first result
+        print(f"⚠️ Using first fallback match: {data[0].get('question')}")
+        return data[0]
+
+    def get_token_ids(self, raw_input: str):
+        """Main function: fetch YES/NO token IDs for any market input."""
+        slug = clean_slug(raw_input)
         market = self.get_market_data(slug)
+
         if not market:
+            print("❌ Could not fetch market data.")
             return None
 
         print(f"\n📊 Market: {market.get('question', 'Unknown Market')}\n")
-
         token_ids = {}
 
-        # Primary location: top-level market object
+        # Top-level market tokens
         if "clobTokenIds" in market:
             try:
                 ids = json.loads(market["clobTokenIds"])
@@ -86,7 +95,7 @@ class PolymarketTokenHelper:
             except Exception:
                 pass
 
-        # Secondary location: inside events
+        # Inside event(s)
         if not token_ids and "events" in market:
             for ev in market["events"]:
                 if "clobTokenIds" in ev:
@@ -99,9 +108,8 @@ class PolymarketTokenHelper:
                     except Exception:
                         continue
 
-        # Display results or fallback
         if not token_ids:
-            print("⚠️ Could not find token IDs. Printing data snippet for debugging:\n")
+            print("⚠️ Could not find token IDs — partial dump below:")
             print(json.dumps(market, indent=2)[:1200])
             return None
 
@@ -114,6 +122,5 @@ class PolymarketTokenHelper:
 if __name__ == "__main__":
     print("🔍 Polymarket Token Helper")
     raw = input("Enter the market slug or URL: ").strip()
-    slug = clean_slug(raw)
     helper = PolymarketTokenHelper()
-    helper.get_token_ids(slug)
+    helper.get_token_ids(raw)
