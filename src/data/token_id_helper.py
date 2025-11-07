@@ -24,30 +24,42 @@ class PolymarketTokenHelper:
             print(f"❌ Error fetching market: {e}")
             return None
 
-        # Handle cases where data wraps in "markets" array
+        # Handle possible 'markets' array
         if isinstance(data, dict) and "markets" in data:
             data = data["markets"][0]
 
+        # Handle if 'outcomes' is a string instead of list of dicts
         outcomes = data.get("outcomes", [])
+        if isinstance(outcomes, str):
+            print("⚠️ Unexpected outcomes format (string), trying to decode manually.")
+            return None
         if not outcomes or not isinstance(outcomes, list):
             print("⚠️ No valid outcomes found for this slug.")
+            print("Raw data preview:", data)
             return None
 
         print(f"\n📊 Market: {data.get('question', 'Unknown market')}\n")
+
         result = {}
-        for o in outcomes:
+        for i, o in enumerate(outcomes):
             if isinstance(o, dict):
-                name = o.get("name", "Unknown")
+                name = o.get("name", f"Outcome {i+1}")
                 token_id = o.get("token_id", "N/A")
                 print(f"  {name} → {token_id}")
                 result[name] = token_id
             else:
-                print(f"⚠️ Unexpected outcome format: {o}")
+                print(f"⚠️ Unexpected outcome type: {type(o)}")
+                print("  Raw outcome value:", o)
         return result
 
 
 if __name__ == "__main__":
     print("🔍 Polymarket Token Helper")
-    slug = input("Enter the market slug: ").strip()
+    slug = input("Enter the market slug or URL: ").strip()
+
+    # Optional: allow full URLs too
+    if "polymarket.com/event/" in slug:
+        slug = slug.split("/event/")[-1].split("?")[0]
+
     helper = PolymarketTokenHelper()
     helper.get_token_ids(slug)
