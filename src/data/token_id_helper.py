@@ -1,3 +1,4 @@
+import json
 import requests
 
 class PolymarketTokenHelper:
@@ -28,11 +29,17 @@ class PolymarketTokenHelper:
         if isinstance(data, dict) and "markets" in data:
             data = data["markets"][0]
 
-        # Handle if 'outcomes' is a string instead of list of dicts
         outcomes = data.get("outcomes", [])
+        
+        # 🧠 FIX: Sometimes Polymarket returns outcomes as a stringified JSON
         if isinstance(outcomes, str):
-            print("⚠️ Unexpected outcomes format (string), trying to decode manually.")
-            return None
+            try:
+                outcomes = json.loads(outcomes)
+            except json.JSONDecodeError:
+                print("❌ Could not parse outcomes string as JSON.")
+                print("Raw outcomes string:", outcomes)
+                return None
+
         if not outcomes or not isinstance(outcomes, list):
             print("⚠️ No valid outcomes found for this slug.")
             print("Raw data preview:", data)
