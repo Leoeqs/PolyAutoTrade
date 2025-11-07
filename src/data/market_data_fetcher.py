@@ -16,7 +16,7 @@ def clean_slug(raw_input: str) -> str:
         return slug.lower()
 
     # Case 2: already looks like a slug
-    if re.fullmatch(r"[a-z0-9\-]+", raw_input):
+    if re.fullmatch(r"[a-z0-9\\-]+", raw_input):
         return raw_input.lower()
 
     # Case 3: normalize title text
@@ -24,9 +24,9 @@ def clean_slug(raw_input: str) -> str:
     slug = slug.replace("–", "-").replace("—", "-")
     slug = slug.replace("’", "'").replace("“", "").replace("”", "")
     slug = slug.replace("#", "number")
-    slug = re.sub(r"\([^)]*\)", "", slug)
-    slug = re.sub(r"[^\w\s-]", "", slug)
-    slug = re.sub(r"[\s_]+", "-", slug)
+    slug = re.sub(r"\\([^)]*\\)", "", slug)
+    slug = re.sub(r"[^\\w\\s-]", "", slug)
+    slug = re.sub(r"[\\s_]+", "-", slug)
     slug = re.sub(r"-{2,}", "-", slug)
     slug = slug.strip("-")
     return slug
@@ -51,7 +51,7 @@ def fetch_orderbook(token_id: str):
 
 
 def safe_float(x):
-    """Convert a string or numeric input safely to float."""
+    """Convert safely to float."""
     try:
         return float(x)
     except Exception:
@@ -62,8 +62,11 @@ def format_orderbook_side(ob_data):
     """Extract best bid/ask and compute midprice."""
     bids = ob_data.get("bids", [])
     asks = ob_data.get("asks", [])
-    best_bid = safe_float(bids[0]["price"]) if bids else 0.0
-    best_ask = safe_float(asks[0]["price"]) if asks else 1.0
+
+    # Convert both sides to floats even if stringified
+    best_bid = safe_float(bids[0].get("price")) if bids else 0.0
+    best_ask = safe_float(asks[0].get("price")) if asks else 1.0
+
     mid = round((best_bid + best_ask) / 2, 4)
     return best_bid, best_ask, mid
 
@@ -91,11 +94,10 @@ def fetch_market_data(raw_input: str):
         best_bid, best_ask, mid = format_orderbook_side(ob)
         implied_prob = round(mid * 100, 2)
         results[label] = implied_prob
-        print(f"✅ {label}: bid {best_bid:.3f} | ask {best_ask:.3f} | mid {mid:.3f} → {implied_prob:.2f}%")
+        print(f"✅ {label}: bid {best_bid:.4f} | ask {best_ask:.4f} | mid {mid:.4f} → {implied_prob:.2f}%")
 
-    # Optional summary line
     if "YES" in results and "NO" in results:
-        print(f"\n🧮 Check: YES + NO = {results['YES'] + results['NO']:.2f}% (market skew {abs(results['YES'] + results['NO'] - 100):.2f}%)")
+        print(f"\n🧮 YES + NO = {results['YES'] + results['NO']:.2f}% (skew {abs(results['YES'] + results['NO'] - 100):.2f}%)")
 
 
 if __name__ == "__main__":
@@ -104,4 +106,4 @@ if __name__ == "__main__":
     try:
         fetch_market_data(raw)
     except Exception as e:
-        print(e)
+        print(f"❌ {e}")
