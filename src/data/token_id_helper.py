@@ -25,13 +25,11 @@ class PolymarketTokenHelper:
             print(f"❌ Error fetching market: {e}")
             return None
 
-        # Handle array wrapper if present
         if isinstance(data, dict) and "markets" in data:
             data = data["markets"][0]
 
         print(f"\n📊 Market: {data.get('question', 'Unknown market')}\n")
 
-        # Try to extract outcomes
         outcomes = data.get("outcomes", [])
         if isinstance(outcomes, str):
             try:
@@ -39,24 +37,20 @@ class PolymarketTokenHelper:
             except json.JSONDecodeError:
                 outcomes = ["Yes", "No"]
 
-        # --- Search for full token IDs under "outcomeTokens" or "tokens" ---
+        # ✅ Extract from clobTokenIds (real IDs)
         token_ids = []
-        if "outcomeTokens" in data:
-            token_ids = [t.get("token_id") for t in data["outcomeTokens"] if isinstance(t, dict)]
-        elif "tokens" in data:
-            token_ids = [t.get("token_id") for t in data["tokens"] if isinstance(t, dict)]
+        if "clobTokenIds" in data and isinstance(data["clobTokenIds"], str):
+            try:
+                token_ids = json.loads(data["clobTokenIds"])
+            except json.JSONDecodeError:
+                print("⚠️ Failed to parse clobTokenIds string.")
+                print("Raw clobTokenIds:", data["clobTokenIds"])
 
-        # --- Print debug info if needed ---
-        if not token_ids or any(tid is None for tid in token_ids):
-            print("⚠️ Could not directly find long token IDs.")
-            print("Inspecting data keys for clarity...")
-            if "outcomeTokens" in data:
-                print(json.dumps(data["outcomeTokens"], indent=2))
-            else:
-                print(json.dumps(data, indent=2))
+        if len(token_ids) < 2:
+            print("⚠️ Could not find full token IDs.")
+            print("Raw keys available:", list(data.keys()))
             return None
 
-        # --- Map outcomes to token IDs ---
         result = {}
         for i, name in enumerate(outcomes):
             tid = token_ids[i] if i < len(token_ids) else "N/A"
@@ -71,7 +65,6 @@ if __name__ == "__main__":
     print("🔍 Polymarket Token Helper")
     slug = input("Enter the market slug or URL: ").strip()
 
-    # Allow full URLs too
     if "polymarket.com/event/" in slug:
         slug = slug.split("/event/")[-1].split("?")[0]
 
