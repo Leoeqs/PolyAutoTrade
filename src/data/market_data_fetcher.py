@@ -1,67 +1,65 @@
 import requests
-from src.data.token_id_helper import PolymarketTokenHelper
+import json
+from datetime import datetime
 
-class MarketDataFetcher:
-    BASE_URL = "https://gamma-api.polymarket.com"
+GAMMA_BASE = "https://gamma-api.polymarket.com"
 
-    def __init__(self):
-        self.session = requests.Session()
-        self.token_helper = PolymarketTokenHelper()
+def fetch_market(slug_or_id: str):
+    """Fetch full market object from Gamma API using slug or ID."""
+    url = f"{GAMMA_BASE}/markets/slug/{slug_or_id}"
+    resp = requests.get(url, timeout=10)
+    if resp.status_code != 200:
+        raise ValueError(f"Error {resp.status_code}: {resp.text}")
+    return resp.json()
 
-    def _get(self, endpoint, params=None):
-        """Internal helper for GET requests."""
-        url = f"{self.BASE_URL}{endpoint}"
-        r = self.session.get(url, params=params, timeout=10)
-        r.raise_for_status()
-        return r.json()
+def fetch_orderbook(token_id: str):
+    """Fetch live orderbook for a CLOB token ID."""
+    url = f"{GAMMA_BASE}/clob/orderbook?token_id={token_id}"
+    resp = requests.get(url, timeout=10)
+    if resp.status_code != 200:
+        raise ValueError(f"Error {resp.status_code}: {resp.text}")
+    return resp.json()
 
-    def get_orderbook(self, token_id: str):
-        """
-        Fetch full orderbook for a given token_id.
-        Returns all bids/asks as lists of [price, size].
-        """
-        data = self._get("/orderbook", params={"token_id": token_id})
-        bids = data.get("bids", [])
-        asks = data.get("asks", [])
-        return {"bids": bids, "asks": asks}
+def format_orderbook_side(side):
+    """Return best bid, best ask, and mid for a given side dict."""
+    bids = side.get("bids", [])
+    asks = side.get("asks", [])
+    best_bid = float(bids[0]["price"]) if bids else 0.0
+    best_ask = float(asks[0]["price"]) if asks else 1.0
+    mid = round((best_bid + best_ask) / 2, 4)
+    return best_bid, best_ask, mid
 
-    def get_market_snapshot(self, slug: str):
-        """
-        Given a market slug, fetch the full orderbooks (YES & NO)
-        and also show top 4 levels for reference.
-        """
-        # 1️⃣ Get token IDs from your helper
-        token_map = self.token_helper.get_token_ids(slug)
-        if not token_map:
-            print("⚠️ Could not fetch token IDs for slug:", slug)
-            return None
+def fetch_market_data(slug_or_id: str):
+    """Fetch metadata + orderbook info for both tokens."""
+    market = fetch_market(slug_or_id)
+    question = market.get("question")
+    end_date = market.get("endDate")
+    volume = market.get("volume", 0)
+    clob_ids = json.loads(market["clobTokenIds"])
 
-        # 2️⃣ Fetch market metadata for the question text
-        market_data = self._get(f"/markets/slug/{slug}")
-        if isinstance(market_data, dict) and "markets" in market_data:
-            market_data = market_data["markets"][0]
-        question = market_data.get("question", "Unknown market")
+    print(f"\n📊 Market: {question}")
+    print(f"🗓️ Ends: {end_date} | 💰 Volume: ${volume:,.0f}\n")
 
-        # 3️⃣ Build snapshot with full orderbook data
-        snapshot = {"question": question, "slug": slug, "orderbooks": {}}
+    results = {}
+    for label, token_id in zip(["YES", "NO"], clob_ids):
+        ob = fetch_orderbook(token_id)
+        bids, asks, mid = format_orderbook_side(ob)
+        results[label] = {
+            "token_id": token_id,
+            "best_bid": bids,
+            "best_ask": asks,
+            "mid": mid,
+            "implied_prob": round(mid * 100, 2),
+        }
+        print(f"{label}: {bids} / {asks} → mid {mid} ({mid*100:.2f}%)")
 
-        for outcome_name, token_id in token_map.items():
-            full_ob = self.get_orderbook(token_id)
-            snapshot["orderbooks"][outcome_name] = full_ob
-
-        return snapshot
+    return results
 
 
 if __name__ == "__main__":
-    print("🔍 Polymarket Market Data Fetcher")
-    slug = input("Enter the market slug: ").strip()
-    fetcher = MarketDataFetcher()
-    snapshot = fetcher.get_market_snapshot(slug)
-    if snapshot:
-        print(f"\n📊 {snapshot['question']}")
-        for outcome, ob in snapshot["orderbooks"].items():
-            print(f"\n📈 {outcome} Orderbook (showing top 4 levels):")
-            print("  Bids:", ob["bids"][:4])
-            print("  Asks:", ob["asks"][:4])
-            print(f"  Total bids: {len(ob['bids'])}, total asks: {len(ob['asks'])}")
-
+    slug = input("Enter working market slug or URL: ").strip()
+    # Example: will-satoshi-move-any-bitcoin-in-2025
+    try:
+        fetch_market_data(slug)
+    except Exception as e:
+        print(f"❌ {e}")
