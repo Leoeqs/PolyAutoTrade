@@ -13,22 +13,11 @@ class PolymarketTokenHelper:
         r.raise_for_status()
         return r.json()
 
-    def _deep_search_token_ids(self, data):
-        """Recursively find any token_id fields in nested dicts/lists."""
-        token_ids = []
-        if isinstance(data, dict):
-            for key, value in data.items():
-                if key in ("token_id", "id") and isinstance(value, str) and value.isdigit():
-                    token_ids.append(value)
-                else:
-                    token_ids.extend(self._deep_search_token_ids(value))
-        elif isinstance(data, list):
-            for item in data:
-                token_ids.extend(self._deep_search_token_ids(item))
-        return token_ids
-
     def get_token_ids(self, slug: str):
-        """Fetch YES/NO token IDs for any market slug."""
+        """
+        Given a market slug (e.g. 'gold-price-over-4000-by-dec-31-2025'),
+        return the outcome token IDs (Yes/No).
+        """
         endpoint = f"/markets/slug/{slug}"
         try:
             data = self._get(endpoint)
@@ -36,14 +25,13 @@ class PolymarketTokenHelper:
             print(f"❌ Error fetching market: {e}")
             return None
 
-        # Unwrap "markets" array if present
+        # Handle array wrapper if present
         if isinstance(data, dict) and "markets" in data:
             data = data["markets"][0]
 
-        question = data.get("question", "Unknown market")
-        print(f"\n📊 Market: {question}\n")
+        print(f"\n📊 Market: {data.get('question', 'Unknown market')}\n")
 
-        # Try to get outcomes
+        # Try to extract outcomes
         outcomes = data.get("outcomes", [])
         if isinstance(outcomes, str):
             try:
@@ -51,14 +39,28 @@ class PolymarketTokenHelper:
             except json.JSONDecodeError:
                 outcomes = ["Yes", "No"]
 
-        # Deep search for token_ids in entire response
-        token_ids = self._deep_search_token_ids(data)
-        if len(token_ids) >= 2:
-            result = {outcomes[0]: token_ids[0], outcomes[1]: token_ids[1]}
-        else:
-            print("⚠️ Could not find token IDs automatically.")
-            print("Raw data keys:", list(data.keys()))
-            result = {outcomes[0]: "N/A", outcomes[1]: "N/A"}
+        # --- Search for full token IDs under "outcomeTokens" or "tokens" ---
+        token_ids = []
+        if "outcomeTokens" in data:
+            token_ids = [t.get("token_id") for t in data["outcomeTokens"] if isinstance(t, dict)]
+        elif "tokens" in data:
+            token_ids = [t.get("token_id") for t in data["tokens"] if isinstance(t, dict)]
+
+        # --- Print debug info if needed ---
+        if not token_ids or any(tid is None for tid in token_ids):
+            print("⚠️ Could not directly find long token IDs.")
+            print("Inspecting data keys for clarity...")
+            if "outcomeTokens" in data:
+                print(json.dumps(data["outcomeTokens"], indent=2))
+            else:
+                print(json.dumps(data, indent=2))
+            return None
+
+        # --- Map outcomes to token IDs ---
+        result = {}
+        for i, name in enumerate(outcomes):
+            tid = token_ids[i] if i < len(token_ids) else "N/A"
+            result[name] = tid
 
         for name, tid in result.items():
             print(f"  {name} → {tid}")
