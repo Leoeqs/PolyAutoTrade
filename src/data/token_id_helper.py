@@ -13,11 +13,22 @@ class PolymarketTokenHelper:
         r.raise_for_status()
         return r.json()
 
+    def _deep_search_token_ids(self, data):
+        """Recursively find any token_id fields in nested dicts/lists."""
+        token_ids = []
+        if isinstance(data, dict):
+            for key, value in data.items():
+                if key in ("token_id", "id") and isinstance(value, str) and value.isdigit():
+                    token_ids.append(value)
+                else:
+                    token_ids.extend(self._deep_search_token_ids(value))
+        elif isinstance(data, list):
+            for item in data:
+                token_ids.extend(self._deep_search_token_ids(item))
+        return token_ids
+
     def get_token_ids(self, slug: str):
-        """
-        Given a market slug, return the outcome token IDs (Yes/No).
-        Works across all Polymarket response formats.
-        """
+        """Fetch YES/NO token IDs for any market slug."""
         endpoint = f"/markets/slug/{slug}"
         try:
             data = self._get(endpoint)
@@ -25,48 +36,29 @@ class PolymarketTokenHelper:
             print(f"❌ Error fetching market: {e}")
             return None
 
-        # Handle possible 'markets' array
+        # Unwrap "markets" array if present
         if isinstance(data, dict) and "markets" in data:
             data = data["markets"][0]
 
-        # Decode stringified outcomes if needed
+        question = data.get("question", "Unknown market")
+        print(f"\n📊 Market: {question}\n")
+
+        # Try to get outcomes
         outcomes = data.get("outcomes", [])
         if isinstance(outcomes, str):
             try:
                 outcomes = json.loads(outcomes)
             except json.JSONDecodeError:
-                # If still not valid JSON, outcomes might just be ["Yes","No"]
-                outcomes = [outcomes]
+                outcomes = ["Yes", "No"]
 
-        print(f"\n📊 Market: {data.get('question', 'Unknown market')}\n")
-
-        result = {}
-
-        # --- Case 1: Standard dict outcomes ---
-        if outcomes and isinstance(outcomes[0], dict):
-            for o in outcomes:
-                name = o.get("name", "Unknown")
-                token_id = o.get("token_id", "N/A")
-                result[name] = token_id
-
-        # --- Case 2: Simple string outcomes like ["Yes", "No"] ---
-        elif outcomes and isinstance(outcomes[0], str):
-            tokens = data.get("tokens") or data.get("outcomeTokens") or []
-            for i, name in enumerate(outcomes):
-                token_id = None
-                if i < len(tokens):
-                    token = tokens[i]
-                    token_id = (
-                        token.get("token_id")
-                        if isinstance(token, dict)
-                        else token
-                    )
-                result[name] = token_id or "N/A"
-
+        # Deep search for token_ids in entire response
+        token_ids = self._deep_search_token_ids(data)
+        if len(token_ids) >= 2:
+            result = {outcomes[0]: token_ids[0], outcomes[1]: token_ids[1]}
         else:
-            print("⚠️ No recognizable outcomes found.")
-            print("Raw data preview:", data)
-            return None
+            print("⚠️ Could not find token IDs automatically.")
+            print("Raw data keys:", list(data.keys()))
+            result = {outcomes[0]: "N/A", outcomes[1]: "N/A"}
 
         for name, tid in result.items():
             print(f"  {name} → {tid}")
