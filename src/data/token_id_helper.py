@@ -15,8 +15,8 @@ class PolymarketTokenHelper:
 
     def get_token_ids(self, slug: str):
         """
-        Given a market slug (e.g. 'gold-price-over-4000-by-dec-31-2025'),
-        return the outcome token IDs (Yes/No).
+        Given a market slug, return the outcome token IDs (Yes/No).
+        Works across all Polymarket response formats.
         """
         endpoint = f"/markets/slug/{slug}"
         try:
@@ -29,34 +29,47 @@ class PolymarketTokenHelper:
         if isinstance(data, dict) and "markets" in data:
             data = data["markets"][0]
 
+        # Decode stringified outcomes if needed
         outcomes = data.get("outcomes", [])
-        
-        # 🧠 FIX: Sometimes Polymarket returns outcomes as a stringified JSON
         if isinstance(outcomes, str):
             try:
                 outcomes = json.loads(outcomes)
             except json.JSONDecodeError:
-                print("❌ Could not parse outcomes string as JSON.")
-                print("Raw outcomes string:", outcomes)
-                return None
-
-        if not outcomes or not isinstance(outcomes, list):
-            print("⚠️ No valid outcomes found for this slug.")
-            print("Raw data preview:", data)
-            return None
+                # If still not valid JSON, outcomes might just be ["Yes","No"]
+                outcomes = [outcomes]
 
         print(f"\n📊 Market: {data.get('question', 'Unknown market')}\n")
 
         result = {}
-        for i, o in enumerate(outcomes):
-            if isinstance(o, dict):
-                name = o.get("name", f"Outcome {i+1}")
+
+        # --- Case 1: Standard dict outcomes ---
+        if outcomes and isinstance(outcomes[0], dict):
+            for o in outcomes:
+                name = o.get("name", "Unknown")
                 token_id = o.get("token_id", "N/A")
-                print(f"  {name} → {token_id}")
                 result[name] = token_id
-            else:
-                print(f"⚠️ Unexpected outcome type: {type(o)}")
-                print("  Raw outcome value:", o)
+
+        # --- Case 2: Simple string outcomes like ["Yes", "No"] ---
+        elif outcomes and isinstance(outcomes[0], str):
+            tokens = data.get("tokens") or data.get("outcomeTokens") or []
+            for i, name in enumerate(outcomes):
+                token_id = None
+                if i < len(tokens):
+                    token = tokens[i]
+                    token_id = (
+                        token.get("token_id")
+                        if isinstance(token, dict)
+                        else token
+                    )
+                result[name] = token_id or "N/A"
+
+        else:
+            print("⚠️ No recognizable outcomes found.")
+            print("Raw data preview:", data)
+            return None
+
+        for name, tid in result.items():
+            print(f"  {name} → {tid}")
         return result
 
 
@@ -64,7 +77,7 @@ if __name__ == "__main__":
     print("🔍 Polymarket Token Helper")
     slug = input("Enter the market slug or URL: ").strip()
 
-    # Optional: allow full URLs too
+    # Allow full URLs too
     if "polymarket.com/event/" in slug:
         slug = slug.split("/event/")[-1].split("?")[0]
 
