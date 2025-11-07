@@ -70,12 +70,16 @@ def fetch_orderbook(token_id: str):
 
 
 def format_orderbook(ob_data):
-    """Extract best bid, ask, and mid values from CLOB data."""
+    """Extract best bid, ask, and mid values from CLOB data (normalize from micro units)."""
     bids = ob_data.get("bids", [])
     asks = ob_data.get("asks", [])
 
-    best_bid = safe_float(bids[0]["price"]) if bids else 0.0
-    best_ask = safe_float(asks[0]["price"]) if asks else 1.0
+    def normalize(p):
+        # Polymarket encodes prices as integers in micro-units (1e6)
+        return safe_float(p) / 1_000_000
+
+    best_bid = normalize(bids[0]["price"]) if bids else 0.0
+    best_ask = normalize(asks[0]["price"]) if asks else 1.0
     mid = round((best_bid + best_ask) / 2, 4)
 
     return best_bid, best_ask, mid
